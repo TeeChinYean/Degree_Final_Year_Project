@@ -1,82 +1,60 @@
 import cv2
-import supervision as sv
-import ultralytics as ul 
-from collections import defaultdict
-from collections import Counter
 from ultralytics import YOLO
+import time
+import numpy as np
+import torch
 
-model = ul.YOLO(r'F:\Degree_Final_Year_Project\runs\detect\fine\train6\weights\best.pt')
-# model = YOLO(r"F:\Degree_Final_Year_Project\runs\detect\train3\weights\best.onnx")
-# Initialize annotators
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
+import threading
 
-# Initialize object tracker (ByteTrack)
-tracker = sv.ByteTrack()
-
-# Initialize webcam
+def backend():
+    
+# model = YOLO(r'F:\Degree_Final_Year_Project\runs\detect\fine2\train2\weights\best.pt')
+model = YOLO(r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.onnx")
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
 if not cap.isOpened():
-    print("Cannot open camera")
+    print("❌ Cannot open camera")
     exit()
 
-# Record of unique tracked objects
-tracked_objects = set()
-class_per_id = defaultdict(str)
+print("✅ Camera started. Press 'q' to quit.")
 
-print("Tracking script started...")
+fps_start_time = time.time()
 
-
-print("\nStarting webcam feed... Press ESC to stop and see summary.\n")
-
-while True:
+while True:    
     ret, frame = cap.read()
     if not ret:
-        
-        print("Can't receive frame (stream end?). Exiting ...")
+        print("⚠️ Failed to grab frame")
         break
+    
+    fps_end_time = time.time()
+    fps = 1 / (fps_end_time - fps_start_time)
+    fps_start_time = fps_end_time
+    fps_text = f"FPS: {fps:.2f}"
+    cv2.putText(frame, fps_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
 
     # Run YOLO detection
-    results = model.track(frame,persist=True,conf=0.3,iou=0.5)[0]
-    detections = sv.Detections.from_ultralytics(results)
+    results = model.track(frame, stream=True,persist=True,conf=0.3, iou=0.5,tracker="botsort.yaml",device='cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Draw results on the frame
+    for r in results:
+        annotated_frame = r.plot()  # draws boxes and labels
 
-    # Update tracker
-    detections = tracker.update_with_detections(detections)
+    # Display the frame
+    cv2.imshow("Detection", annotated_frame)
 
-    # Record unique objects (by track_id)
-    for det, class_id, track_id in zip(detections.xyxy, detections.class_id, detections.tracker_id):
-        if track_id not in tracked_objects:
-            tracked_objects.add(track_id)
-            class_name = model.names[class_id]
-            class_per_id[track_id] = class_name
+    box = np.zeros((512,512,3), np.uint8)
 
-    # Annotate the frame
-    annotated_frame = bounding_box_annotator.annotate(scene=frame, detections=detections)
-    annotated_image = label_annotator.annotate(scene=annotated_frame, detections=detections)
+    start_point = (0,0)
+    end_point = (511,511)
+    color = (255,255,255)
+    thickness = 5
 
-    # Show the live window
-    cv2.imshow("YOLO Tracking", annotated_image)
-
-    # Press ESC to quit
-    if cv2.waitKey(q) == 27:
-        print("Esc pressed. Ending detection...")
+    cv2.line(box, start_point, end_point, color, thickness)
+    
+    # Press 'q' to exit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+# Release camera and close window
 cap.release()
 cv2.destroyAllWindows()
-
-# Summarize tracked results
-if tracked_objects:
-    
-    counts = Counter(class_per_id.values())
-    total = sum(counts.values())
-
-    print("\n===== Detection Summary =====")
-    print(f"Total unique objects detected: {total}")
-    for cls, num in counts.items():
-        print(f"{cls}: {num}")
-else:
-    print("No unique objects detected.")
