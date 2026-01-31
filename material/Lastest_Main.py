@@ -7,6 +7,7 @@ from ultralytics import YOLO
 from collections import Counter
 import supervision as sv
 import json
+from queue import Empty
 
 
 # =========================
@@ -39,7 +40,10 @@ def capture_process(frame_q, stop_event):
             continue
 
         if frame_q.full():
-            frame_q.get_nowait()
+            try:
+                frame_q.get_nowait()
+            except Empty:
+                pass
 
         frame_q.put_nowait(frame)
 
