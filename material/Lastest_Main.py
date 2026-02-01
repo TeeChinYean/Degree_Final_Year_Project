@@ -18,9 +18,6 @@ import threading
 from threading import Lock
 import keyboard
 import requests
-active_event = mp.Event()
-active_event.set()
-
 
 # =========================
 # Settings
@@ -54,11 +51,12 @@ data_lock = Lock()
 # Camera
 # =========================
 class ItemDetect:
-    def __init__(self, frame_q, stop_event, yolo_q, display_q):
+    def __init__(self, frame_q, stop_event, yolo_q, display_q,active_event):
         self.frame_q = frame_q
         self.stop_event = stop_event
         self.yolo_q = yolo_q
         self.display_q = display_q
+        self.active_event = active_event
         
     def capture_process(self):
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -81,12 +79,11 @@ class ItemDetect:
 
 
     def yolo_process(self):
-        global active_event
         model = None
         print("YOLO process started")
 
         while not self.stop_event.is_set():
-            if not active_event.is_set():
+            if not self.active_event.is_set():
                 time.sleep(0.2)
                 continue
 
@@ -398,8 +395,9 @@ async def main():
     frame_q = mp.Queue(2)
     yolo_q = mp.Queue()
     weight_q = mp.Queue()
-    
-    item_detect = ItemDetect(frame_q, stop_event, yolo_q, display_q)
+    active_event = mp.Event()
+    active_event.set()
+    item_detect = ItemDetect(frame_q, stop_event, yolo_q, display_q,active_event)
     
     # ===== start processes =====
     p_capture = mp.Process(target=item_detect.capture_process, args=())
