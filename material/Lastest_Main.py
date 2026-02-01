@@ -6,6 +6,7 @@ import multiprocessing as mp
 from ultralytics import YOLO
 from collections import Counter
 import supervision as sv
+import torch
 
 import json
 import re
@@ -23,6 +24,8 @@ active_event.set()
 # 参数配置
 # =========================
 MODEL_PATH = r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.onnx"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {DEVICE}")
 IMG_SIZE = 640
 BOX_SIZE = 400
 
@@ -91,7 +94,8 @@ def yolo_process(frame_q, yolo_q, display_q, stop_event):
             iou=0.4,
             persist=True,
             tracker="bytetrack.yaml",
-            verbose=False
+            verbose=False,
+            device = DEVICE
         )
 
         now = time.time()
