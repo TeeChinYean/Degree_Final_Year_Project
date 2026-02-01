@@ -20,143 +20,129 @@ import keyboard
 import requests
 active_event = mp.Event()
 active_event.set()
+
+
 # =========================
-# 参数配置
+# Settings
 # =========================
+#video source
 MODEL_PATH = r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.onnx"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {DEVICE}")
 IMG_SIZE = 640
-BOX_SIZE = 400
+BOX_SIZE = 480
 
+# Weight sensor settings
 START_THRESHOLD = 0.4
 END_THRESHOLD = 0.35
 MIN_WEIGHT_DURATION = 0.3
 MIN_YOLO_DURATION = 2.5
 
+#global variables
 display_q = None
 stop_event = None
+data_list = []
 
+#Webapp settings
 app = Flask(__name__)
 CORS(app)
 data_list = []
 data_lock = Lock()
+
+
 # =========================
 # Camera
 # =========================
+class ItemDetect:
+    def __init__(self, frame_q, stop_event, yolo_q, display_q):
+        self.frame_q = frame_q
+        self.stop_event = stop_event
+        self.yolo_q = yolo_q
+        self.display_q = display_q
+        
+    def capture_process(self):
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        print("📷 Camera started")
 
-def capture_process(frame_q, stop_event):
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        while not self.stop_event.is_set():
+            ret, frame = cap.read()
+            if not ret:
+                time.sleep(0.01)
+                continue
 
-    print("📷 Camera started")
+            if self.frame_q.full():
+                self.frame_q.get(timeout=0.1)
 
-    while not stop_event.is_set():
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.01)
-            continue
+            self.frame_q.put_nowait(frame)
 
-        if frame_q.full():
-            frame_q.get(timeout=0.1)
-
-        frame_q.put_nowait(frame)
-
-    cap.release()
+        cap.release()
 
 
-def yolo_process(frame_q, yolo_q, display_q, stop_event):
-    model = None
-    print("YOLO process started")
+    def yolo_process(self):
+        global active_event
+        model = None
+        print("YOLO process started")
 
-    while not stop_event.is_set():
-        if not active_event.is_set():
-            time.sleep(0.2)
-            continue
+        while not self.stop_event.is_set():
+            if not active_event.is_set():
+                time.sleep(0.2)
+                continue
 
-        if model is None:
-            model = YOLO(MODEL_PATH, task="detect")
-            
-        try:
-            frame = frame_q.get(timeout=0.1)
-        except:
-            continue
+            if model is None:
+                model = YOLO(MODEL_PATH, task="detect")
+                
+            try:
+                frame = self.frame_q.get(timeout=0.1)
+            except:
+                continue
 
-        h, w, _ = frame.shape
-        x1, y1 = w//2 - BOX_SIZE//2, h//2 - BOX_SIZE//2
-        x2, y2 = w//2 + BOX_SIZE//2, h//2 + BOX_SIZE//2
+            h, w, _ = frame.shape
+            x1, y1 = w//2 - BOX_SIZE//2, h//2 - BOX_SIZE//2
+            x2, y2 = w//2 + BOX_SIZE//2, h//2 + BOX_SIZE//2
 
-        results = model.track(
-            frame,
-            imgsz=IMG_SIZE,
-            conf=0.3,
-            iou=0.4,
-            persist=True,
-            tracker="bytetrack.yaml",
-            verbose=False,
-            device = DEVICE
-        )
+            results = model.track(
+                frame,
+                imgsz=IMG_SIZE,
+                conf=0.3,
+                iou=0.4,
+                persist=True,
+                tracker="bytetrack.yaml",
+                verbose=False,
+                device = DEVICE
+            )
 
-        now = time.time()
+            now = time.time()
 
-        if results and results[0].boxes.id is not None:
-            det = sv.Detections.from_ultralytics(results[0])
+            if results and results[0].boxes.id is not None:
+                det = sv.Detections.from_ultralytics(results[0])
 
-            for xyxy, cid, tid in zip(det.xyxy, det.class_id, det.tracker_id):
-                xc = (xyxy[0] + xyxy[2]) / 2
-                yc = (xyxy[1] + xyxy[3]) / 2
+                for xyxy, cid, tid in zip(det.xyxy, det.class_id, det.tracker_id):
+                    xc = (xyxy[0] + xyxy[2]) / 2
+                    yc = (xyxy[1] + xyxy[3]) / 2
 
-                if x1 < xc < x2 and y1 < yc < y2:
-                    yolo_q.put({
-                        "label": model.names[int(cid)],
-                        "time": now
-                    })
+                    if x1 < xc < x2 and y1 < yc < y2:
+                        self.yolo_q.put({
+                            "label": model.names[int(cid)],
+                            "time": now
+                        })
 
-                    cv2.putText(
-                        frame,
-                        f"{model.names[int(cid)]}", (int(xyxy[0]), int(xyxy[1]) - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2
-                    )
+                        cv2.putText(
+                            frame,
+                            f"{model.names[int(cid)]}", (int(xyxy[0]), int(xyxy[1]) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2
+                        )
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        if not display_q.full():
-            display_q.put(frame)
+            if not self.display_q.full():
+                self.display_q.put(frame)
 
 
 # =========================
-# Display
+# Web App
 # =========================
-# def display_process(display_q, stop_event):
-#     fps_last = time.time()
-#     fps = 0
-
-#     while not stop_event.is_set():
-#         try:
-#             frame = display_q.get(timeout=0.1)
-#         except:
-#             continue
-
-#         now = time.time()
-#         dt = now - fps_last
-#         fps_last = now
-
-#         if dt > 0:
-#             fps = 0.9 * fps + 0.1 * (1 / dt)
-
-#         cv2.putText(frame, f"FPS: {fps:.2f}",
-#                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-#                     1, (0, 255, 0), 2)
-
-#         cv2.imshow("Smart Checkout System", frame)
-
-#         if cv2.waitKey(1) & 0xFF == ord("q"):
-#             stop_event.set()
-#             break
-
-#     cv2.destroyAllWindows()
-
 def flask_video_stream():
     global display_q, stop_event
     fps_last = time.time()
@@ -228,6 +214,8 @@ def data_stream():
             yield f"data: {payload}\n\n"
 
         time.sleep(0.2)
+
+
 
 # =========================
 # Weight Sensor
@@ -325,14 +313,14 @@ async def weight_worker(stop_event, weight_q):
 
 
 # =========================
-# Main Controller
+# Mixed Controller
 # =========================
 async def main_item_detection(stop_event, weight_q, yolo_q):
     session = None
     print("🧠 Main controller started")
 
     while not stop_event.is_set():
-        while not weight_q.empty():
+        while not weight_q.empty(): # first conditions
             w = weight_q.get()
 
             if w["event"] == "start":
@@ -353,14 +341,17 @@ async def main_item_detection(stop_event, weight_q, yolo_q):
                 session = None
 
 
-        while not yolo_q.empty():
+        while not yolo_q.empty(): # second conditions
             y = yolo_q.get()
             if session and y["time"] >= session["ws"]:
                 session["events"].append(y)
 
         await asyncio.sleep(0.02)
 
-data_list = []
+
+# =========================
+# Process Session
+# =========================
 def process_session(s):
     global data_list
     labels = [e["label"] for e in s["events"]]
@@ -375,9 +366,7 @@ def process_session(s):
         print("❌ YOLO too short")
         return
 
-    # 使用结束重量
     final_weight = s["weight_end"]
-    
     print("\n✅ FINAL RESULT")
     print(f"Item      : {item}")
     print(f"Weight    : {final_weight:.2f} g")
@@ -389,14 +378,7 @@ def process_session(s):
             "item": item,
             "weight": f"{final_weight:.2f}",
         }
-    
-    # old one, store the data in file
-    #------------------------------------
-    # file_path = 'data.json'
-    # data_list.append(new_data)
-    # with open(file_path, 'w', encoding='utf-8') as f:
-    #     json.dump(data_list, f, indent=4) 
-    
+
     # send data to webpage
     url = "http://localhost/greenpoint_site/Front-end/camera.php"
     r = requests.post(url, json=new_data,timeout=5)
@@ -407,52 +389,29 @@ def process_session(s):
 # Entry
 # =========================
 async def main():
-    #data file setup
-    # file_path = 'data.json'
-    # if os.path.exists(file_path):
-    #     try:
-    #         with open(file_path, 'w', encoding='utf-8') as f: # clean old data
-    #             json.dump([], f)
-    #             print(f"✅ Ready: {file_path} has been reset/created.")
-    #     except Exception as e:
-    #         print(f"❌ Error resetting {file_path}: {e}")
-            
     mp.set_start_method("spawn", force=True)# keep for Prevents accidental fallback
-
     #queues & events setup
     global stop_event
     global display_q
     stop_event = mp.Event()
-
-    
     display_q = mp.Queue(2)
     frame_q = mp.Queue(2)
     yolo_q = mp.Queue()
     weight_q = mp.Queue()
-
+    
+    item_detect = ItemDetect(frame_q, stop_event, yolo_q, display_q)
+    
     # ===== start processes =====
-    p_capture = mp.Process(target=capture_process, args=(frame_q, stop_event))
-    p_yolo    = mp.Process(target=yolo_process, args=(frame_q, yolo_q, display_q, stop_event))
-    # p_display = mp.Process(target=display_process, args=(display_q, stop_event))
-
+    p_capture = mp.Process(target=item_detect.capture_process, args=())
+    p_yolo    = mp.Process(target=item_detect.yolo_process, args=())
     p_capture.start()
     p_yolo.start()
-    # p_display.start()
+
     
     # ===== start async tasks =====
     task_weight = asyncio.create_task(weight_worker(stop_event, weight_q))
     task_main   = asyncio.create_task(main_item_detection(stop_event, weight_q, yolo_q))
-
-    threading.Thread(
-        #use threading run web
-        target=lambda: app.run(
-            host='0.0.0.0',
-            port=5000,
-            threaded=True,
-            use_reloader=False
-        ),
-        daemon=True
-    ).start()
+    threading.Thread(target=lambda: run_flask(), daemon=True).start()
     
     try:
         await asyncio.gather(task_weight, task_main)
