@@ -1,0 +1,8 @@
+opencv-python 
+serial 
+ultralytics 
+supervision 
+flask 
+flask_cors 
+keyboard 
+requests
