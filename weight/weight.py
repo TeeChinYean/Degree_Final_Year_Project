@@ -3,259 +3,202 @@ import time
 import matplotlib.pyplot as plt
 import keyboard
 import sys
-import threading
 
-# Connect to Arduino
-arduino = serial.Serial('COM7', 9600)
+arduino = serial.Serial('COM7', 9600, timeout=1)
 print("✅ Connected to Arduino on COM7")
 
-# Item tracking
+
+# Globals 
 current_item_readings = []
 items = []
 item_detected = False
-weight_min = 0.4      # minimum weight considered as a valid item
-empty_delay = 0.01   # seconds to confirm item removed
-last_above_time = 0
-delay = 0.5
+weight_min = 0.4
+empty_delay = 0.01
+
 pause = False
 running = True
+
+show_plot_flag = False
+clear_plot_flag = False
 
 class PlotData:
     def __init__(self):
         self.fig = None
         self.ax = None
         self.line = None
-
         self.x_data = []
         self.y_data = []
         self.start_time = None
-
         self.active = False
 
-    # --- Initialize and show plot ---
     def setup(self):
-        if self.fig is not None:
+        if self.active:
             return
-        
         plt.ion()
         self.fig, self.ax = plt.subplots()
         self.ax.set_title("Real-Time Weight Reading")
         self.ax.set_xlabel("Time (s)")
         self.ax.set_ylabel("Weight (g)")
-
-        self.line, = self.ax.plot([], [], linewidth=2)
-
+        (self.line,) = self.ax.plot([], [], linewidth=2)
         self.x_data = []
         self.y_data = []
         self.start_time = time.time()
         self.active = True
-        plt.show(block=False) 
+        plt.show(block=False)
         print("📈 Plot view ON")
 
-    # --- Update graph with new weight ---
     def update(self, weight):
         if not self.active:
             return
-
         self.x_data.append(time.time() - self.start_time)
         self.y_data.append(weight)
-
         self.line.set_xdata(self.x_data)
         self.line.set_ydata(self.y_data)
-
         self.ax.relim()
         self.ax.autoscale_view()
+        self.fig.canvas.draw_idle()
+        plt.pause(0.001)
 
-        self.plt.draw(xlim=self.ax.get_xlim(), ylim=self.ax.get_ylim())
-        plt.pause(0.0001)
-
-    # --- Clear existing graph ---
     def clear(self):
-        if not self.active :
+        if not self.active:
             return
-
         self.x_data.clear()
         self.y_data.clear()
-
         self.line.set_xdata([])
         self.line.set_ydata([])
-
         self.fig.canvas.draw_idle()
-        plt.pause(0.0001)
+        plt.pause(0.001)
         print("🧼 Plot cleared.")
 
-    # --- Close plot window ---
     def close(self):
         if not self.active:
             return
-
         plt.close(self.fig)
         self.active = False
         self.fig = None
         print("📉 Plot view OFF")
-        
-    def background_update(self):
-        if not self.active:
-            self.setup()
-        
-        thread = threading.Thread(target=self.background_loop, daemon=True)
-        thread.start()
-        
-    def background_loop(self):
-        while self.active:
-            if self.x_data and self.y_data:
-                self.fig.canvas.draw_idle()
-                plt.pause(0.001)
-            time.sleep(0.1)
 
-auto_sleep = 300
-sleep_mode = False
-class keyboard_functions:
-    plotter = PlotData()
-    show_plot = False
-    
-    # def pause_program(self):
-    #     global pause,auto_sleep,items
-    #     auto_sleep = False  
-    #     pause = not pause
-        
-    #     state = "⏸️ Paused" if pause else "▶️ Resumed"        
-    #     print(f"\n{state}")
+plotter = PlotData()
 
-    #     if items:
-    #         print(f"🧮 Summary of recorded items:{len(items)}")
-    #         for i, w in enumerate(items, 1):
-    #             print(f"   Item {i}: {w:.2f} g")
-    #         print(f"📊 Total weight of all items: {sum(items):.2f} g")
+# -------------------------
+# Hotkey callbacks
+# -------------------------
+def toggle_pause():
+    global pause
+    pause = not pause
+    print("⏸️ Paused" if pause else "▶️ Resumed")
 
-    #     time.sleep(delay)  # debounce key press
-        
-            
-    def clean_record(self):
-        global items
-        items.clear()
-        print("\n🗑️ Cleared all recorded items.")
-        time.sleep(delay)
-        
-    def quit_program(self):
-        global running
-        running = False
-        print("\n🛑 Quitting program.")
+def clear_records():
+    global items
+    items.clear()
+    print("🗑️ Cleared recorded items")
 
-    def show_plot(self):        
-        plotter.setup()
-        
-        time.sleep(delay)
-        
-    def system_sleep(self, flag:bool):
-        self.sleep = flag
-        return flag
-        
-        
-    def clear_plot(self):
-        global plotter
-        plotter.clear()
-        time.sleep(delay)
-        
+def quit_program():
+    global running
+    print("🛑 Quit requested")
+    running = False
 
-show_plot = False
+def toggle_plot():
+    global show_plot_flag
+    show_plot_flag = not show_plot_flag
+    print("Toggle plot:", "ON" if show_plot_flag else "OFF")
 
-# keyboard.add_hotkey('space',lambda:KF.pause_program())
-keyboard.add_hotkey('c',lambda:KF.clean_record())
-keyboard.add_hotkey('q',lambda:KF.quit_program())   
-keyboard.add_hotkey('p',lambda:KF.show_plot())
-keyboard.add_hotkey('i',lambda:KF.clear_plot())
+def request_clear_plot():
+    global clear_plot_flag
+    clear_plot_flag = True
 
+# Register hotkeys (these callbacks are small and safe)
+keyboard.add_hotkey('space', toggle_pause)
+keyboard.add_hotkey('c', clear_records)
+keyboard.add_hotkey('q', quit_program) 
+keyboard.add_hotkey('p', toggle_plot)
+keyboard.add_hotkey('i', request_clear_plot)  
+
+# -------------------------
+# Main loop (all GUI calls here)
+# -------------------------
 try:
-    plotter = PlotData()
-    KF = keyboard_functions()
-    current_time = time.time()
-    
+    last_above_time = 0
+    start_time = time.time()
     while running:
-        if not pause and (time.time() - current_time) > auto_sleep and not item_detected:
-            if not sleep_mode:
-                sleep_mode = True
-                print("\n🛌 System sleep due to inactivity.")  
-                
-        if pause or sleep_mode:            
-            if data:
-                try:
-                    weight = float(data)
-                    if weight >= weight_min:
-                        print("\n🌅 Waking up from sleep mode.")
-                        sleep_mode = False
-                        last_above_time = time.time()
-                        pause = False
-                    
-                except ValueError:
-                    print("⚠️ Non-numeric data:", data)
-            KF.system_sleep(True)
-                
-        KF.system_sleep(False)
-        current_time = time.time()
-            
+        # handle plot flag in main thread (safe GUI calls)
+        if show_plot_flag and not plotter.active:
+            plotter.setup()
+        if not show_plot_flag and plotter.active:
+            plotter.close()
+        if clear_plot_flag:
+            if plotter.active:
+                plotter.clear()
+            clear_plot_flag = False
 
-        # --- Read Arduino data ---
-        
-        arduino.write(b'READ\n')
-        data = arduino.readline().decode().strip()
-            
+        # Read serial (ask and read)
+        try:
+            arduino.write(b'READ\n')
+        except Exception as e:
+            print("⚠️ Serial write failed:", e)
+            time.sleep(0.2)
+            continue
 
-        if data:
-            try:
-                weight = float(data)
-                    
-                if show_plot:
-                    plotter.update(weight)
-                    time.sleep(0.01)
-                else:
-                    time.sleep(0.001)
+        raw = arduino.readline().decode(errors='ignore').strip()
+        if not raw:
+            # no data available; yield some time
+            time.sleep(0.01)
+            continue
 
-                # --- Item detection logic ---
-                if weight >= weight_min:
-                    current_item_readings.append(weight)
-                    last_above_time = time.time()
+        # Ignore non-numeric lines safely
+        try:
+            weight = float(raw)
+        except ValueError:
+            print("⚠️ Non-numeric data:", raw)
+            time.sleep(0.01)
+            continue
 
-                    if not item_detected:
-                        item_detected = True
-                        print(f"\n📦 Item detected! Counting readings...")
+        # If plotting active, update plot (main thread)
+        if plotter.active:
+            plotter.update(weight)
 
-                elif item_detected and (time.time() - last_above_time) > empty_delay:
-                    current_item_readings = current_item_readings[1:-1]
-                    if not current_item_readings:
-                        print("⚠️ No valid readings for item. Discarded.")
-                        item_detected = False
-                        continue
-                    avg_weight = sum(current_item_readings) / len(current_item_readings)
-                    items.append(avg_weight)
-                    print(f"✅ Item {len(items)} recorded | Average weight: {avg_weight:.2f} g")
-                    current_item_readings.clear()
-                    item_detected = False
+        # Item detection logic (unchanged)
+        if weight >= weight_min:
+            current_item_readings.append(weight)
+            last_above_time = time.time()
+            if not item_detected:
+                item_detected = True
+                print("\n📦 Item detected! Counting readings...")
 
-                # Print live weight
-                print(f"Live weight: {weight:.2f} g", end='\r')
+        elif item_detected and (time.time() - last_above_time) > empty_delay:
+            usable = current_item_readings[1:-1] if len(current_item_readings) > 3 else list(current_item_readings)
+            if usable:
+                avg_weight = sum(usable) / len(usable)
+                items.append(avg_weight)
+                print(f"✅ Item {len(items)} recorded | Average weight: {avg_weight:.2f} g")
+            else:
+                print("⚠️ Not enough readings; discarded.")
+            current_item_readings.clear()
+            item_detected = False
 
-            except ValueError:
-                print("⚠️ Non-numeric data:", data)
+        # Live weight print
+        print(f"Live weight: {weight:.2f} g", end='\r')
 
-        time.sleep(0.01)
+        # tiny sleep to avoid 100% CPU and allow GUI events
+        time.sleep(0.005)
 
 except KeyboardInterrupt:
     print("\n🛑 Stopped by user.")
 
 finally:
-# --- Summary after stopping ---
-    if 'arduino' in locals() and arduino.is_open:
+    # Cleanup
+    if arduino and arduino.is_open:
         arduino.close()
         print("\n🔌 Disconnected from Arduino.")
-        
+    if plotter.active:
+        plotter.close()
+
+    # Summary
     if items:
-        print(f"🧮 Summary of recorded items:{len(items)}")
+        print(f"🧮 Summary of recorded items: {len(items)}")
         for i, w in enumerate(items, 1):
             print(f"   Item {i}: {w:.2f} g")
-        total_weight = sum(items)
-        print(f"📊 Total weight of all items: {total_weight:.2f} g")
+        print(f"📊 Total weight: {sum(items):.2f} g")
     else:
         print("No items were recorded.")
-        
     sys.exit(0)
