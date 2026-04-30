@@ -1,12 +1,12 @@
 import cv2
 import asyncio
 import multiprocessing as mp
-from ultralytics import YOLO
 from collections import Counter
-import supervision as sv
-import torch
 import threading
 from threading import Lock
+import numpy as np
+import openvino as ov
+import psutil
 
 import time
 import serial
@@ -30,22 +30,46 @@ active_event.clear()  # Inactive until camera page activates via web (or keyboar
 # Camera & YOLO Class
 # =========================
 # settings
-model_path = r"F:\Degree_Final_Year_Project\V4_Retrain\yolo12_balanced_final_v22\weights\best.engine" if torch.cuda.is_available() else r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.onnx"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-IMG_SIZE = 640
+MODEL_XML = r"F:\Degree_Final_Year_Project\V4_Retrain\yolo12_balanced_final_v22\weights\best_openvino_model\best.xml"
+DEVICE = "CPU"
+OV_COMPILE_CONFIG = {"PERFORMANCE_HINT": "LATENCY"}
+PROC_W = 320
+PROC_H = 320
+CONF_THRESHOLD = 0.3
+NMS_THRESHOLD = 0.45
+MAX_DRAW_DETS = 4
+HUD_UPDATE_INTERVAL = 0.12
+CLASS_NAMES = ['Aluminium_Can', 'hand', 'paper', 'plastic']
+IGNORE_LABELS = {"hand"}
 BOX_SIZE = 480
+STREAM_JPEG_QUALITY = 75
+STREAM_SCALE = 1.0
+
+# CPU affinity profile (mirrors test_openvino.py idea)
+CORE_PRODUCER = [2]
+CORE_UI = [4]
+CORE_INFER = [6, 8, 10]
+
+def bind_affinity(core_ids):
+    try:
+        psutil.Process().cpu_affinity(core_ids)
+    except Exception:
+        pass
+
 class ItemDetect:
     def __init__(self, frame_q, yolo_q, display_q, active_event):
         self.frame_q = frame_q
         self.yolo_q = yolo_q
         self.display_q = display_q
         self.active_event = active_event
-        self.model = YOLO(model_path, task="detect")
         
     def capture_process(self):
+        bind_affinity(CORE_PRODUCER)
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         print("📷 Camera capture running continuously")
 
         try:
@@ -66,17 +90,21 @@ class ItemDetect:
             cap.release()
 
     def yolo_process(self):
-            
-            
+            bind_affinity(CORE_INFER)
             try:
-                yolo_instance = self.model
-                print("✅ Model loaded successfully")
+                core = ov.Core()
+                compiled_model = core.compile_model(MODEL_XML, DEVICE, OV_COMPILE_CONFIG)
+                output_layer = compiled_model.outputs[0]
+                print("✅ OpenVINO model loaded successfully")
             except Exception as e:
                 print(f"❌ Failed to load model: {e}")
                 return
 
             last_detect_time = time.time()
-            avg_fps = 0
+            avg_ai_fps = 0
+            avg_total_fps = 0
+            hud_text = "AI FPS: 0.0 | Total FPS: 0.0"
+            last_hud_update = 0.0
 
             while True:
                 if not self.active_event.is_set():
@@ -95,57 +123,116 @@ class ItemDetect:
                 if frame is None:
                     continue
 
+                loop_start = time.time()
                 h, w, _ = frame.shape
                 x1, y1 = w//2 - BOX_SIZE//2, h//2 - BOX_SIZE//2
                 x2, y2 = w//2 + BOX_SIZE//2, h//2 + BOX_SIZE//2
 
+                blob = cv2.resize(frame, (PROC_W, PROC_H), interpolation=cv2.INTER_NEAREST)
+                blob = blob.transpose(2, 0, 1)[None, ...].astype(np.float32) / 255.0
+
+                # Match test_openvino.py metric: inference-only FPS
                 time1 = time.time()
-                
-                results = yolo_instance.track(
-                    frame, 
-                    imgsz=IMG_SIZE,
-                    conf=0.3,
-                    iou=0.5,
-                    persist=True,
-                    half=True,
-                    tracker="bytetrack.yaml",
-                    verbose=False,
-                    device=DEVICE
-                )
-                
-                #fps
+                results = compiled_model([blob])[output_layer]
                 time2 = time.time() 
                 dt = time2 - time1
                 if dt > 0:
                     curr_fps = 1.0 / dt
-                    avg_fps = (avg_fps * 0.9 + curr_fps * 0.1) if avg_fps > 0 else curr_fps
+                    avg_ai_fps = (avg_ai_fps * 0.9 + curr_fps * 0.1) if avg_ai_fps > 0 else curr_fps
                 
                 detections_found = False
-                
-                # 核心修正：安全检查结果和 ID
-                if results and len(results[0].boxes) > 0 and results[0].boxes.id is not None:
-                    det = sv.Detections.from_ultralytics(results[0])
 
-                    for xyxy, cid, tid in zip(det.xyxy, det.class_id, det.tracker_id):
-                        xc = (xyxy[0] + xyxy[2]) / 2
-                        yc = (xyxy[1] + xyxy[3]) / 2
+                if results.ndim == 3:
+                    data = results[0].T
+                    if data.shape[0] > 0:
+                        scores = data[:, 4:]
+                        class_ids = np.argmax(scores, axis=1)
+                        confs = scores[np.arange(scores.shape[0]), class_ids]
+                        valid_mask = confs > CONF_THRESHOLD
 
-                        if x1 < xc < x2 and y1 < yc < y2:
-                            detections_found = True
-                            
-                            label_name = yolo_instance.names[int(cid)]
-                            
-                            self.yolo_q.put({
-                                "label": label_name,
-                                "time": current_time
-                            })
-                            
-                            cv2.rectangle(frame, (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3])), (255, 0, 0), 2)
-                            cv2.putText(frame, f"{label_name} ID:{int(tid)}", (int(xyxy[0]), int(xyxy[1]) - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                        if np.any(valid_mask):
+                            rows = data[valid_mask]
+                            class_ids = class_ids[valid_mask]
+                            confs = confs[valid_mask]
 
-                # 绘制 UI 信息
-                cv2.putText(frame, f"FPS: {avg_fps:.1f}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+                            sx = w / PROC_W
+                            sy = h / PROC_H
+                            bx = rows[:, 0]
+                            by = rows[:, 1]
+                            bw = rows[:, 2]
+                            bh = rows[:, 3]
+
+                            left = ((bx - bw / 2) * sx).astype(np.int32)
+                            top = ((by - bh / 2) * sy).astype(np.int32)
+                            right = ((bx + bw / 2) * sx).astype(np.int32)
+                            bottom = ((by + bh / 2) * sy).astype(np.int32)
+
+                            boxes_xywh = []
+                            labels = []
+                            scores_list = []
+                            for i in range(len(confs)):
+                                label_name = CLASS_NAMES[int(class_ids[i])] if int(class_ids[i]) < len(CLASS_NAMES) else "item"
+                                if label_name.lower() in IGNORE_LABELS:
+                                    continue
+                                l = int(left[i])
+                                t = int(top[i])
+                                r = int(right[i])
+                                b = int(bottom[i])
+                                boxes_xywh.append([l, t, max(1, r - l), max(1, b - t)])
+                                labels.append(label_name)
+                                scores_list.append(float(confs[i]))
+
+                            if boxes_xywh:
+                                keep_idx = cv2.dnn.NMSBoxes(boxes_xywh, scores_list, CONF_THRESHOLD, NMS_THRESHOLD)
+                                keep_idx = keep_idx.flatten().tolist() if len(keep_idx) else []
+                                if keep_idx:
+                                    keep_idx = sorted(keep_idx, key=lambda idx: scores_list[idx], reverse=True)[:MAX_DRAW_DETS]
+
+                                for i in keep_idx:
+                                    l, t, bw_px, bh_px = boxes_xywh[i]
+                                    r = l + bw_px
+                                    b = t + bh_px
+                                    xc = (l + r) / 2
+                                    yc = (t + b) / 2
+
+                                    if x1 < xc < x2 and y1 < yc < y2:
+                                        detections_found = True
+                                        self.yolo_q.put({
+                                            "label": labels[i],
+                                            "time": current_time
+                                        })
+
+                                        cv2.rectangle(frame, (l, t), (r, b), (255, 0, 0), 2)
+                                        cv2.putText(
+                                            frame,
+                                            f"{labels[i]} {scores_list[i]:.2f}",
+                                            (l, max(20, t - 10)),
+                                            cv2.FONT_HERSHEY_SIMPLEX,
+                                            0.7,
+                                            (255, 0, 0),
+                                            2
+                                        )
+
+                # 绘制 UI 信息: inference-only FPS + full pipeline FPS
+                total_dt = time.time() - loop_start
+                if total_dt > 0:
+                    curr_total_fps = 1.0 / total_dt
+                    avg_total_fps = (avg_total_fps * 0.9 + curr_total_fps * 0.1) if avg_total_fps > 0 else curr_total_fps
+
+                now_hud = time.time()
+                if now_hud - last_hud_update >= HUD_UPDATE_INTERVAL:
+                    hud_text = f"AI FPS: {avg_ai_fps:.1f} | Total FPS: {avg_total_fps:.1f}"
+                    last_hud_update = now_hud
+
+                cv2.putText(
+                    frame,
+                    hud_text,
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.75,
+                    (255, 255, 0),
+                    2
+                )
                 # cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                 # 8. counting item appear time
@@ -182,8 +269,13 @@ def flask_video_stream():
         if frame is None:
                 time.sleep(0.1)
                 continue
+
+        if STREAM_SCALE != 1.0:
+            frame = cv2.resize(frame, (0, 0), fx=STREAM_SCALE, fy=STREAM_SCALE, interpolation=cv2.INTER_AREA)
         #display frame in Flask(web)
-        _, buffer = cv2.imencode('.jpg', frame)
+        ok, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), STREAM_JPEG_QUALITY])
+        if not ok:
+            continue
         yield (
             b'--frame\r\n'
             b'Content-Type: image/jpeg\r\n\r\n'
@@ -455,6 +547,7 @@ def process_session(s):
 # =========================
 async def main():
     mp.set_start_method("spawn", force=True)
+    bind_affinity(CORE_UI)
     
     global active_event, display_q
     
