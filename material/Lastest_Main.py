@@ -30,7 +30,7 @@ active_event.clear()  # Inactive until camera page activates via web (or keyboar
 # Camera & YOLO Class
 # =========================
 # settings
-model_path = r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.engine" if torch.cuda.is_available() else r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.onnx"
+model_path = r"F:\Degree_Final_Year_Project\V4_Retrain\yolo12_balanced_final_v22\weights\best.engine" if torch.cuda.is_available() else r"F:\Degree_Final_Year_Project\Degree_Final_Year_Project\material\pt\secondTrain\Extra_retrain2\weights\best.onnx"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IMG_SIZE = 640
 BOX_SIZE = 480
@@ -105,7 +105,7 @@ class ItemDetect:
                     frame, 
                     imgsz=IMG_SIZE,
                     conf=0.3,
-                    iou=0.4,
+                    iou=0.5,
                     persist=True,
                     half=True,
                     tracker="bytetrack.yaml",
@@ -145,7 +145,7 @@ class ItemDetect:
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
                 # 绘制 UI 信息
-                cv2.putText(frame, f"FPS: {avg_fps:.1f}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                cv2.putText(frame, f"FPS: {avg_fps:.1f}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
                 # cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                 # 8. counting item appear time
