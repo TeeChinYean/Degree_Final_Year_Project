@@ -9,15 +9,7 @@ if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Active Detect</title>
-    <link rel="stylesheet" href="../style/style.css">
-</head>
-<body>
-    <?php include './header.php'; ?>
+<?php include './header.php'; ?>
     
     <main class="container">
         <?php foreach ($data as $item): ?>
@@ -53,5 +45,4 @@ if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
             });
     });
     </script>
-</body>
-</html>
+<?php include './footer.php'; ?>

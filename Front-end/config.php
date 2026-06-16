@@ -1,6 +1,6 @@
 <?php
 // Database configuration - edit for your environment
-$db_host = 'localhost';
+$db_host = '127.0.0.1';
 $db_name = 'website';
 $db_user = 'root';
 $db_pass = '';

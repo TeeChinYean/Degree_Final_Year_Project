@@ -1,0 +1,20 @@
+# Large archive and build directories
+station.zip
+station/
+best_openvino_model/
+build/
+dist/
+
+# Compiled binaries
+*.exe
+*.dll
+*.pyd
+*.so
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+env/

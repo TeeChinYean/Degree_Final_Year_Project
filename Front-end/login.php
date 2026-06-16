@@ -30,26 +30,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 include './header.php';
 ?>
-<div class="wrap" style="padding:24px 0;max-width:500px;margin:auto;text-align:center">
-  <h1>User Login</h1>
 
-  <?php if ($err): ?>
-    <p style="color:red"><?= htmlspecialchars($err) ?></p>
-  <?php endif; ?>
+<main class="auth-container">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h1>Welcome Back</h1>
+            <p class="auth-subtitle">Sign in to your Green Point account</p>
+        </div>
 
-  <form method="post" style="margin-top:16px">
-    <label>Username<br>
-      <input name="username" required style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc">
-    </label><br><br>
+        <?php if ($err): ?>
+            <div class="alert error">
+                <strong>Error:</strong> <?= htmlspecialchars($err) ?>
+            </div>
+        <?php endif; ?>
 
-    <label>Password<br>
-      <input name="password" type="password" required style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc">
-    </label><br><br>
+        <form method="post" class="auth-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input 
+                    id="username" 
+                    name="username" 
+                    type="text" 
+                    required 
+                    autocomplete="username"
+                    placeholder="Enter your username"
+                    value="<?= isset($_POST['username']) ? htmlspecialchars($_POST['username']) : '' ?>"
+                >
+            </div>
 
-    <button class="btn" style="padding:10px 20px;background:#0f5b63;color:#fff;border:none;border-radius:6px;cursor:pointer">Login</button>
-  </form>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input 
+                    id="password" 
+                    name="password" 
+                    type="password" 
+                    required 
+                    autocomplete="current-password"
+                    placeholder="Enter your password"
+                >
+            </div>
 
-  <hr style="margin:30px 0">
+            <button type="submit" class="btn btn-primary btn-block btn-large">Sign In</button>
+        </form>
 
-</div>
+        <div class="auth-footer">
+            <p>Don't have an account? <a href="./register.php">Create one here</a></p>
+            <p><a href="./index.php">← Back to Home</a></p>
+        </div>
+    </div>
+</main>
+
 <?php include './footer.php'; ?>

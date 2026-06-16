@@ -9,10 +9,12 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $user_id = (int)$_SESSION['user_id'];
+$saved = false;
+$pw_success = false;
+$pw_error = '';
 
 // Handle profile updates
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Determine which form was submitted
     if (isset($_POST['update_profile'])) {
         $name = trim($_POST['name'] ?? '');
         $gmail = trim($_POST['gmail'] ?? '');
@@ -20,17 +22,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($name !== '' && $gmail !== '') {
             $stmt = $pdo->prepare("UPDATE users SET User_name = ?, User_email = ? WHERE User_id = ?");
             $stmt->execute([$name, $gmail, $user_id]);
+            $_SESSION['user'] = $name;
             $saved = true;
         }
     }
 
-    // Handle password change
     if (isset($_POST['change_password'])) {
         $current = $_POST['current_password'] ?? '';
         $new = $_POST['new_password'] ?? '';
         $confirm = $_POST['confirm_password'] ?? '';
 
-        // Fetch current password hash
         $stmt = $pdo->prepare("SELECT Password FROM users WHERE User_id = ?");
         $stmt->execute([$user_id]);
         $user_pw = $stmt->fetchColumn();
@@ -58,91 +59,121 @@ $user = $stmt->fetch(PDO::FETCH_ASSOC);
 include './header.php';
 ?>
 
-<main style="max-width:900px;margin:36px auto;padding:20px;text-align:center;font-family:Arial, sans-serif;">
-  <!-- Profile Circle -->
-  <div style="margin:0 auto;width:160px;height:160px;border-radius:50%;
-              background:#0f5b63;color:#fff;display:flex;align-items:center;
-              justify-content:center;font-weight:700;font-size:40px;">
-    <?= htmlspecialchars(strtoupper(substr($user['User_name'], 0, 1))) ?>
-  </div>
-
-  <h2 style="margin-top:18px;color:#0f5b63;"><?= htmlspecialchars($user['User_name']) ?></h2>
-  <p style="color:#555;"><?= htmlspecialchars($user['User_email']) ?></p>
-
-  <div style="max-width:520px;margin:22px auto;text-align:left;">
-
-    <!-- Profile Update Message -->
-    <?php if (!empty($saved)): ?>
-      <div style="color:green;padding:8px;border:1px solid #cceacc;margin-bottom:10px;text-align:center;">
-        Profile updated successfully.
-      </div>
-    <?php endif; ?>
-
-    <!-- Password Change Message -->
-    <?php if (!empty($pw_success)): ?>
-      <div style="color:green;padding:8px;border:1px solid #cceacc;margin-bottom:10px;text-align:center;">
-        Password changed successfully.
-      </div>
-    <?php elseif (!empty($pw_error)): ?>
-      <div style="color:red;padding:8px;border:1px solid #e6b5b5;margin-bottom:10px;text-align:center;">
-        <?= htmlspecialchars($pw_error) ?>
-      </div>
-    <?php endif; ?>
-
-    <!-- Edit Profile Form -->
-    <form method="post">
-      <label style="display:block;margin-bottom:8px;">Full Name
-        <input name="name" value="<?= htmlspecialchars($user['User_name']) ?>"
-               style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;">
-      </label>
-
-      <label style="display:block;margin-bottom:8px;">Gmail
-        <input name="gmail" type="email" value="<?= htmlspecialchars($user['User_email']) ?>"
-               style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;">
-      </label>
-
-      <div style="text-align:center;margin-top:12px;">
-        <button name="update_profile" type="submit"
-                style="background:#0f5b63;color:#fff;padding:10px 16px;
-                       border-radius:6px;border:none;cursor:pointer;">
-          Save Changes
-        </button>
-      </div>
-    </form>
-
-    <hr style="margin:28px 0;">
-
-    <!-- Change Password Form -->
-    <h3 style="color:#0f5b63;text-align:center;">Change Password</h3>
-    <form method="post">
-      <label style="display:block;margin-bottom:8px;">Current Password
-        <input name="current_password" type="password" required
-               style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;">
-      </label>
-
-      <label style="display:block;margin-bottom:8px;">New Password
-        <input name="new_password" type="password" required minlength="6"
-               style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;">
-      </label>
-
-      <label style="display:block;margin-bottom:8px;">Confirm New Password
-        <input name="confirm_password" type="password" required minlength="6"
-               style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;">
-      </label>
-
-      <div style="text-align:center;margin-top:12px;">
-        <button name="change_password" type="submit"
-                style="background:#0f5b63;color:#fff;padding:10px 16px;
-                       border-radius:6px;border:none;cursor:pointer;">
-          Update Password
-        </button>
-      </div>
-    </form>
-
-    <div style="text-align:center;margin-top:20px;">
-      <a href="logout.php" style="color:#0f5b63;text-decoration:none;">Logout</a>
+<main class="wrap container">
+    <div class="profile-header">
+        <div class="profile-avatar">
+            <?= htmlspecialchars(strtoupper(substr($user['User_name'], 0, 1))) ?>
+        </div>
+        <div class="profile-info">
+            <h1><?= htmlspecialchars($user['User_name']) ?></h1>
+            <p class="profile-email"><?= htmlspecialchars($user['User_email']) ?></p>
+            <?php if (isset($user['balance'])): ?>
+                <p class="profile-balance">
+                    <strong><?= (int)$user['balance']; ?></strong> Green Points
+                </p>
+            <?php endif; ?>
+        </div>
     </div>
-  </div>
+
+    <div class="profile-content">
+        <section class="profile-section">
+            <h2>Edit Profile</h2>
+            
+            <?php if ($saved): ?>
+                <div class="alert success">
+                    Profile updated successfully!
+                </div>
+            <?php endif; ?>
+
+            <form method="post" class="profile-form">
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input 
+                        id="name" 
+                        name="name" 
+                        type="text" 
+                        value="<?= htmlspecialchars($user['User_name']) ?>"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="gmail">Email Address</label>
+                    <input 
+                        id="gmail" 
+                        name="gmail" 
+                        type="email" 
+                        value="<?= htmlspecialchars($user['User_email']) ?>"
+                        required
+                    >
+                </div>
+
+                <button name="update_profile" type="submit" class="btn btn-primary">
+                    Save Changes
+                </button>
+            </form>
+        </section>
+
+        <section class="profile-section">
+            <h2>Change Password</h2>
+            
+            <?php if ($pw_success): ?>
+                <div class="alert success">
+                    Password changed successfully!
+                </div>
+            <?php elseif ($pw_error): ?>
+                <div class="alert error">
+                    <?= htmlspecialchars($pw_error) ?>
+                </div>
+            <?php endif; ?>
+
+            <form method="post" class="profile-form">
+                <div class="form-group">
+                    <label for="current_password">Current Password</label>
+                    <input 
+                        id="current_password" 
+                        name="current_password" 
+                        type="password" 
+                        required
+                        placeholder="Enter your current password"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="new_password">New Password</label>
+                    <input 
+                        id="new_password" 
+                        name="new_password" 
+                        type="password" 
+                        required 
+                        minlength="6"
+                        placeholder="At least 6 characters"
+                    >
+                    <small class="form-hint">Minimum 6 characters</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm_password">Confirm New Password</label>
+                    <input 
+                        id="confirm_password" 
+                        name="confirm_password" 
+                        type="password" 
+                        required 
+                        minlength="6"
+                        placeholder="Re-enter your new password"
+                    >
+                </div>
+
+                <button name="change_password" type="submit" class="btn btn-primary">
+                    Update Password
+                </button>
+            </form>
+        </section>
+
+        <div class="profile-actions">
+            <a href="./dashboard.php" class="btn btn-outline">← Back to Dashboard</a>
+        </div>
+    </div>
 </main>
 
 <?php include './footer.php'; ?>

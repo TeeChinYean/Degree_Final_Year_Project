@@ -1,69 +1,108 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Recycle Item Types - Green Point</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="../style/style.css">
-</head>
-<body>
 <?php
 require './config.php';
+session_start();
 include './header.php';
-$stmt = $pdo->query('SELECT * FROM item_types ');
+
+$stmt = $pdo->query('SELECT * FROM item_types ORDER BY Points DESC');
 $items = $stmt->fetchAll();
 ?>
-<div id="container">
-  <div class="wrap" style="padding:24px 0">
-    <h1>Recycle Item Types</h1>
-    <table>
-      <tr><th>Material</th><th>Example Items</th><th>Points per item</th></tr>
-      <?php foreach($items as $it): ?>
-        <tr>
-          <td><?php echo htmlspecialchars($it['Type']); ?></td>
-          <td><?php echo htmlspecialchars($it['Examples']); ?></td>
-          <td><?php echo (int)$it['Points']; ?></td>
-        </tr>
-      <?php endforeach; ?>
-    </table>  
-  </div>
-  <div id="detect-button" class="btn-outline">
-    <form method="post" action="start_detect_setup.php">
-      <button class="btn" id="activate-btn" name="start_detection">Start Detecting Items</button>
-    </form>
-  </div>
-  <div id="back-button" class="btn-container" style="margin-top:16px;">
-    <button class="btn" onclick="Back()">Back</button>
-  </div>
-</div>
-<?php include './footer.php'; ?>
-</body>
-</html>
+
+<main class="wrap container">
+    <div class="page-header">
+        <h1>Recyclable Item Types</h1>
+        <p class="page-subtitle">Learn about different materials and their point values</p>
+    </div>
+
+    <div class="table-container">
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Icon</th>
+                        <th>Material Type</th>
+                        <th>Example Items</th>
+                        <th>Points per 100g</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($items)): ?>
+                        <tr>
+                            <td colspan="4" class="empty-state">
+                                <div class="empty-icon">📦</div>
+                                <p><strong>No item types available at the moment.</strong></p>
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach($items as $it): ?>
+                            <tr>
+                                <td class="icon-cell">
+                                    <?php if(!empty($it['Image'])): ?>
+                                        <img src="../img/<?= htmlspecialchars($it['Image']) ?>" 
+                                             alt="<?= htmlspecialchars($it['Type']) ?>" 
+                                             class="item-icon">
+                                    <?php else: ?>
+                                        <span class="item-icon-placeholder">📦</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <strong class="item-type"><?= htmlspecialchars($it['Type']) ?></strong>
+                                </td>
+                                <td class="item-examples">
+                                    <?= htmlspecialchars($it['Examples']) ?>
+                                </td>
+                                <td>
+                                    <span class="badge badge-primary">
+                                        <?= (int)$it['Points'] ?> pts
+                                    </span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="table-actions">
+            <?php if(isset($_SESSION['user_id'])): ?>
+                <form action="start_detect_setup.php" method="POST" style="display: inline;">
+                    <button type="submit" id="start_detect" class="btn btn-primary btn-large">
+                        🎯 Start Detecting Items
+                    </button>
+                </form>
+            <?php else: ?>
+                <a href="./login.php" class="btn btn-primary btn-large">
+                    Login to Start Detecting
+                </a>
+            <?php endif; ?>
+            <a href="./index.php" class="btn btn-outline btn-large">← Back to Home</a>
+        </div>
+    </div>
+</main>
 
 <script>
-document.getElementById("activate-btn").addEventListener("click", function(event) {
-    event.preventDefault(); 
-    
-    // 2. CHANGED URL to point to Python (Port 5000)
-    // The request must go to the Flask server, not the PHP server.
+document.getElementById("start_detect").addEventListener("click", function(e) {
+    e.preventDefault();
+
     fetch("http://localhost:5000/activate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json"
+        },
         body: JSON.stringify({ active: true })
     })
-    .then(response => {
-        console.log("Wake up command sent");
-        // 3. Navigate ONLY after the request is sent
-        window.location.href = './camera.php';
+    .then(res => {
+        if (!res.ok) throw new Error("Activation failed");
+        return res.json();
+    })
+    .then(() => {
+        // ✅ only navigate AFTER request fully completes
+        window.location.href = "./camera.php";
     })
     .catch(err => {
-        console.error("Error connecting to Python:", err);
-        // Even if Python is down, we still go to the camera page so the user isn't stuck
-        window.location.href = './camera.php';
+        console.error(err);
+        alert("Failed: " + err.message);
     });
 });
-
-function Back() {
-    window.history.back();
-}
 </script>
+
+<?php include './footer.php'; ?>
