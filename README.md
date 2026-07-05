@@ -131,8 +131,10 @@ void loop() {
   ├── admin_video_server.py Admin video relay server (source)
   ├── setup.py             Station registration tool (source)
   ├── site_config.json     Station configuration
+  ├── website.sql          MySQL database schema + seed data
   ├── requirements.txt     Python dependencies
   └── venv\                Python virtual environment
+  
 
 **================================================================================
   CLONING FROM GITHUB
