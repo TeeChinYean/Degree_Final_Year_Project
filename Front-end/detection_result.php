@@ -32,41 +32,67 @@ function parse_weight_grams($rawWeight): float {
 }
 
 function resolve_item_meta(PDO $pdo, string $itemName): ?array {
-    static $cache = [];
+    static $resolvedCache = [];
+    static $dbLookup = null;
     static $aliases = [
-        'plastic_bottle' => 'plastic-bottle',
-        'plastic' => 'plastic-bottle',
-        'aluminium_can' => 'can',
-        'aluminum_can' => 'can',
-        'can' => 'can',
-        'glass_bottle' => 'glass bottle',
-        'paper' => 'paper',
-        'steel_can' => 'steel can',
-        'wired' => 'wired',
+        'plastic'        => 'plastic_bottle',
+        'plastic_bottle' => 'plastic_bottle',
+        'aluminium_can'  => 'can',
+        'aluminum_can'   => 'can',
+        'tin_can'        => 'can',
+        'can'            => 'can',
+        'glass_bottle'   => 'glass_bottle',
+        'glass'          => 'glass_bottle',
+        'paper'          => 'paper',
+        'steel_can'      => 'steel_can',
+        'wired'          => 'wired',
     ];
 
-    $normalized = normalize_label($itemName);
-    $lookup = $aliases[$normalized] ?? str_replace('_', ' ', $normalized);
-
-    if (array_key_exists($lookup, $cache)) {
-        return $cache[$lookup];
+    // Build a full DB lookup map once (normalised key => row)
+    if ($dbLookup === null) {
+        $dbLookup = [];
+        $stmt = $pdo->query("SELECT item_id, type, points FROM item_types");
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $dbLookup[normalize_label((string)$row['type'])] = $row;
+        }
     }
 
-    $stmt = $pdo->prepare("
-        SELECT item_id, type, points
-        FROM item_types
-        WHERE LOWER(type) = LOWER(?)
-        LIMIT 1
-    ");
-    $stmt->execute([$lookup]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    $cache[$lookup] = $row ?: null;
-    return $cache[$lookup];
+    $normalized   = normalize_label($itemName);
+    $candidateKeys = [$normalized];
+    if (isset($aliases[$normalized])) {
+        $candidateKeys[] = normalize_label($aliases[$normalized]);
+    }
+    if ($normalized === 'glass') {
+        $candidateKeys[] = 'glass_bottle';
+    }
+
+    foreach ($candidateKeys as $key) {
+        if (array_key_exists($key, $resolvedCache)) {
+            return $resolvedCache[$key];
+        }
+        if (isset($dbLookup[$key])) {
+            $resolvedCache[$key] = $dbLookup[$key];
+            return $dbLookup[$key];
+        }
+    }
+
+    // Fuzzy partial match fallback
+    foreach ($dbLookup as $typeKey => $row) {
+        if (str_contains($typeKey, $normalized) || str_contains($normalized, $typeKey)) {
+            $resolvedCache[$normalized] = $row;
+            return $row;
+        }
+    }
+
+    $resolvedCache[$normalized] = null;
+    return null;
 }
 
 $totalWeight = 0;
 $totalPoints = 0;
 $itemCounts = [];
+// Pre-calculate per-entry points for display
+$enrichedData = [];
 
 foreach ($data as $entry) {
     $itemName = trim($entry['item']);
@@ -75,12 +101,20 @@ foreach ($data as $entry) {
     $totalWeight += $weight;
 
     $meta = resolve_item_meta($pdo, $itemName);
+    $entryPoints = 0;
     if ($meta) {
         $pointsPer100g = (float)$meta['points'];
-        $rawPoints = ($weight / 100) * $pointsPer100g;
-        $totalPoints += (int) round($rawPoints);
+        $entryPoints   = (int) round(($weight / 100) * $pointsPer100g);
+        $totalPoints  += $entryPoints;
     }
-    
+
+    $enrichedData[] = [
+        'item'   => $itemName,
+        'weight' => $weight,
+        'points' => $entryPoints,
+        'found'  => ($meta !== null),
+    ];
+
     if (!isset($itemCounts[$itemName])) {
         $itemCounts[$itemName] = ['count' => 0, 'weight' => 0];
     }
@@ -110,15 +144,28 @@ include './header.php';
                         <tr>
                             <th>Item Type</th>
                             <th>Weight (g)</th>
+                            <th>Points</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($data as $entry): ?>
+                        <?php foreach ($enrichedData as $entry): ?>
                             <tr>
                                 <td>
                                     <strong><?= htmlspecialchars($entry['item']) ?></strong>
+                                    <?php if (!$entry['found']): ?>
+                                        <span style="color:#e67e22;font-size:0.78em;" title="Item type not found in database">
+                                            ⚠ unrecognised
+                                        </span>
+                                    <?php endif; ?>
                                 </td>
-                                <td><?= number_format(parse_weight_grams($entry['weight'] ?? 0), 0); ?>g</td>
+                                <td><?= number_format($entry['weight'], 0) ?>g</td>
+                                <td>
+                                    <?php if ($entry['found']): ?>
+                                        <strong style="color:#27ae60;">+<?= $entry['points'] ?></strong>
+                                    <?php else: ?>
+                                        <span style="color:#aaa;">—</span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
