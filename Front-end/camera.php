@@ -208,22 +208,13 @@ socket.on('video_frame_broadcast', (data) => {
     });
 })();
 
-// ── 2) Load history ────────────────────────────────────────────────────────
+// ── 2) Detection results container ─────────────────────────────────────────
 const resultContainer = document.getElementById("result");
 let detectionResults = [];
 
-fetch(`${STATION_BASE}/history`)
-    .then(res => res.json())
-    .then(history => {
-        detectionResults = history;
-        history.forEach(data => {
-            const p = document.createElement("p");
-            p.innerText = `${data.item} - ${data.weight} g`;
-            resultContainer.appendChild(p);
-        });
-        resultContainer.scrollTop = resultContainer.scrollHeight;
-    })
-    .catch(() => {}); // station may not be reachable yet
+// Clear any leftover data from previous session immediately on page load.
+// This ensures SSE always starts fresh from index 0 — no duplicates possible.
+fetch(`${STATION_BASE}/clear_data`, { method: "POST" }).catch(() => {});
 
 // ── 3) Page unload: deactivate + clear ────────────────────────────────────
 window.addEventListener("beforeunload", function () {
@@ -236,7 +227,11 @@ window.addEventListener("beforeunload", function () {
 });
 
 // ── 4) SSE real-time detection & Stream Toggle ─────────────────────────────
+let sseStarted = false;
 function startSSE() {
+    if (sseStarted) return;
+    sseStarted = true;
+    
     // Activate AI detection on station
     fetch(`${STATION_BASE}/activate`, {
         method: "POST",
@@ -305,7 +300,16 @@ function startSSE() {
     btnWebrtc.addEventListener('click', () => switchStream('webrtc'));
     btnMjpeg.addEventListener('click', () => switchStream('mjpeg'));
 
-    const evtSource = new EventSource(`${STATION_BASE}/word_event`);
+    // SSE always starts from 0 — data_list was cleared on page load above.
+    const evtSource = new EventSource(`${STATION_BASE}/word_event?from=0`);
+
+    // If the network blips (e.g. VPN), EventSource automatically reconnects.
+    // Because it re-requests ?from=0, the server will replay the entire list.
+    // We clear the client UI on connection open so the replay perfectly syncs without duplicates.
+    evtSource.onopen = function() {
+        detectionResults = [];
+        resultContainer.innerHTML = "";
+    };
 
     evtSource.onmessage = function(event) {
         const data = JSON.parse(event.data);
