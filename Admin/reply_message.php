@@ -1,4 +1,5 @@
 <?php
+session_start();
 require 'includes/db.php';
 require '../phpmailer/src/PHPMailer.php';
 require '../phpmailer/src/SMTP.php';
@@ -6,6 +7,11 @@ require '../phpmailer/src/Exception.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+
+if (empty($_SESSION['Admin_id'])) {
+    header('Location: login.php');
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message_id = (int)$_POST['message_id'];
