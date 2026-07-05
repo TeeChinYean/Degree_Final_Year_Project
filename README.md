@@ -1,7 +1,4 @@
 ================================================================================
-  Setup & Execution Guide
-================================================================================
-
   TOOLS & VERSIONS
 ================================================================================
 
@@ -16,7 +13,7 @@
   mediamtx (RTSP)       Latest          https://github.com/bluenviron/mediamtx/releases
   FFmpeg                Release-essentials  https://www.gyan.dev/ffmpeg/builds/
 
-  Python libraries are listed in requirements.txt.
+  Setup Enviroment, Python libraries are listed in requirements.txt:
   Install with:  pip install -r requirements.txt
 
 ================================================================================
@@ -42,6 +39,12 @@
   plastic           Plastic Bottle 2.0                   https://universe.roboflow.com/fyp-li8zz/plastic-bottle-2.0
                     by fyp-li8zz
 
+
+  Train well model path: 320p-2/weights/
+  original: best.pt (can convert to .engine, .onnx, .openvino or else)
+  
+  Current use: best_openvino_model folder
+  
 ================================================================================
   PROJECT STRUCTURE
 ================================================================================
@@ -63,12 +66,20 @@
   SETUP STEPS
 ================================================================================
 
-  ── A. Web Application (Laragon or XAMPP, prefer Xampp for quick open) ─────────────────────────────────────────────
+  ── A. Web Application (Laragon) ─────────────────────────────────────────────
 
   1. Install Laragon and start Apache + MySQL.
   2. Place project files in:  F:\laragon\www\
   3. Open Laragon → Database, create a database named  website
-  4. Run database migration:  http://localhost/Front-end/run_migration.php
+  4. Import the database schema:
+       a. Download  website.sql  from the GitHub repository.
+       b. Open HeidiSQL (comes with Laragon) or phpMyAdmin.
+       c. Select the  website  database.
+       d. Go to  File → Load SQL file  (HeidiSQL)
+               or  Import → Choose File  (phpMyAdmin)
+       e. Select  website.sql  and click  Execute / Go.
+     ─ OR ─ via command line:
+       mysql -u root -p website < website.sql
   5. Edit DB credentials in  Front-end/config.php  if needed:
        $db_host = '127.0.0.1';  $db_name = 'website';
        $db_user = 'root';       $db_pass = '';
@@ -95,7 +106,7 @@
   3. python main_system.py ← start detection system
 
   Station Requirements:
-  • Windows 10/11 (64-bit), USB webcam, Intel CPU
+  • Windows 10/11 (64-bit), USB webcam
   • Tailscale VPN installed and connected
   • mediamtx.exe + ffmpeg.exe in the same folder as main_system.exe
 
