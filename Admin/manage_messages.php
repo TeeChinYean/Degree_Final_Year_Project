@@ -11,10 +11,10 @@ require 'includes/header.php';
 
 // Fetch messages with username
 $stmt = $pdo->query("
-  SELECT m.Contact_Id, m.User_id, u.User_name AS User_name, m.Message, m.Created_at, m.status, u.User_email 
+  SELECT m.Contact_Id, m.User_id, u.User_name AS User_name, m.Message, m.created_at, m.status, u.User_email 
   FROM contact_messages m
   JOIN users u ON m.User_id = u.User_id
-  ORDER BY m.Created_at DESC
+  ORDER BY m.created_at DESC
 ");
 $messages = $stmt->fetchAll();
 ?>
@@ -23,12 +23,18 @@ $messages = $stmt->fetchAll();
   <h1 class="admin-title">Manage Messages</h1>
   <p class="admin-subtitle">Read user feedback and reply directly from the panel.</p>
 
+  <?php if (isset($_GET['sent'])): ?>
+    <div class="alert alert-success">✅ Reply sent successfully.</div>
+  <?php elseif (isset($_GET['error']) && $_GET['error'] === 'mail'): ?>
+    <div class="alert alert-error">❌ Reply saved but email failed to send.</div>
+  <?php endif; ?>
+
   <?php foreach($messages as $msg): ?>
   <div class="msg-card">
     <div class="msg-head">
       <h3><?= htmlspecialchars($msg['User_name']) ?></h3>
       <div class="msg-meta">User ID: <?= (int)$msg['User_id'] ?></div>
-      <div class="msg-meta">Received: <?= htmlspecialchars($msg['Created_at']) ?></div>
+      <div class="msg-meta">Received: <?= htmlspecialchars($msg['created_at']) ?></div>
     </div>
 
     <div class="msg-body"><?= nl2br(htmlspecialchars($msg['Message'])) ?></div>
