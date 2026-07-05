@@ -1,0 +1,55 @@
+# ============================================================
+#  GreenPoint — Python Dependencies
+#  Generated from: F:\laragon\www\venv
+#  Python version : 3.12.9 (64-bit)
+# ============================================================
+
+# --- Core AI / Computer Vision ---
+opencv-python==4.13.0.92        # Camera capture, MJPEG encoding, RTSP via cv2
+openvino==2026.1.0              # Intel OpenVINO AI inference (YOLOv8 model)
+numpy==2.4.4                    # Numerical arrays for image processing
+
+# --- Web Server (Station & Admin Video Server) ---
+flask==3.1.3                    # HTTP server for station API and admin relay
+flask-cors==6.0.2               # Cross-Origin Resource Sharing for Flask
+flask-socketio==5.6.1           # SocketIO server (real-time video relay)
+
+# --- SocketIO Client (Station → Admin) ---
+python-socketio==5.16.1         # SocketIO client used by main_system.py
+python-engineio==4.13.1         # Transport layer for SocketIO
+
+# --- HTTP Client ---
+requests==2.33.1                # HTTP requests (setup.py → PHP API)
+
+# --- System Utilities ---
+psutil==7.2.2                   # CPU affinity & process management
+pyserial==3.5                   # Serial port communication
+keyboard==0.13.5                # Global keyboard hotkey detection
+
+# --- SocketIO/WebSocket Transport ---
+simple-websocket==1.1.0         # WebSocket transport for flask-socketio
+bidict==0.23.1                  # Bidirectional dict used by python-socketio
+dnspython==2.8.0                # DNS resolver (eventlet dependency)
+eventlet==0.41.0                # Async networking (optional SocketIO backend)
+greenlet==3.5.0                 # Lightweight coroutines (eventlet dependency)
+websocket-client==1.9.0         # WebSocket client library
+
+# --- Flask Dependencies ---
+werkzeug==3.1.8                 # WSGI utilities for Flask
+jinja2==3.1.6                   # Template engine for Flask
+click==8.3.3                    # CLI framework used by Flask
+blinker==1.9.0                  # Signal support for Flask
+itsdangerous==2.2.0             # Data signing for Flask sessions
+markupsafe==3.0.3               # Safe string markup (Jinja2 dependency)
+colorama==0.4.6                 # Cross-platform terminal colours
+
+# --- HTTP/TLS ---
+certifi==2026.4.22              # Mozilla CA bundle for HTTPS
+charset-normalizer==3.4.7       # Character encoding detection
+idna==3.13                      # Internationalized domain names
+urllib3==2.7.0                  # HTTP connection pooling (requests dep)
+h11==0.16.0                     # HTTP/1.1 protocol (wsproto dependency)
+wsproto==1.3.2                  # WebSocket protocol implementation
+
+# --- Build Tool (only needed to compile .exe) ---
+pyinstaller==6.20.0             # Packages Python scripts into standalone .exe
