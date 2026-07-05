@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message = trim($_POST['message'] ?? '');
 
     if ($message !== '') {
-        $stmt = $pdo->prepare("INSERT INTO contact_messages (User_id, Message, created_at) VALUES (?, ?, NOW())");
+        $stmt = $pdo->prepare("INSERT INTO contact_messages (User_id, Message, status, created_at) VALUES (?, ?, 0, NOW())");
         $stmt->execute([$user_id, $message]);
         $success = '✅ Your message has been sent successfully!';
     } else {
