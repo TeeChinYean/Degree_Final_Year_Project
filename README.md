@@ -1,6 +1,84 @@
-================================================================================
+**  HARDWARE REQUIREMENTS (Station PC)
+======================================================**
+
+  The station detection system requires the following hardware:
+
+  Component               Purpose
+  ──────────────────────────────────────────────────────────────────────────────
+  Arduino Uno R3          Microcontroller — reads weight and sends via serial
+  HX711 Load Cell Amp.    Amplifier module — bridges load cell sensor to Arduino
+  Load Cell (any range)   Measures item weight placed on the platform
+  USB Webcam (laptop camera or else)  Camera feed for AI object detection
+  USB Cable (Type-B)      Arduino → Station PC connection
+
+  Wiring (HX711 → Arduino Uno R3):
+  ─────────────────────────────────
+    HX711 VCC  →  Arduino 5V
+    HX711 GND  →  Arduino GND
+    HX711 DT   →  Arduino Pin 3  (Data)
+    HX711 SCK  →  Arduino Pin 2  (Clock)
+
+  Arduino Sketch:
+  ───────────────
+  Flash the Arduino with a sketch that reads from the HX711 and sends weight
+  values as plain text over Serial at 9600 baud, one reading per line.
+  Example output format:  0.45   (weight in kg or g, one decimal)
+
+  The system auto-detects the Arduino on these COM ports (in order):
+    COM7 → COM11 → COM8 → COM6 → COM3
+  If your Arduino appears on a different port, update the list in main_system.py
+  at line 822:  for port in ("COM7", "COM11", "COM8", "COM6", "COM3"):
+
+  Weight Thresholds (adjustable in main_system.py):
+  ──────────────────────────────────────────────────
+    START_THRESHOLD = 0.4   ← item placed (kg) — starts detection session
+    END_THRESHOLD   = 0.35  ← item removed    — ends detection session
+
+  NOTE: The system runs WITHOUT the Arduino (weight sensor) but detection will
+        not trigger automatically — it will only show the camera feed.
+
+**code for arduino uno r3 to flash:**
+
+
+#include "HX711.h"
+
+#define DOUT 2
+#define CLK  3
+
+HX711 scale;
+
+// Invert calibration factor to fix negative readings
+float calibration_factor = -179.40;
+
+void setup() {
+  Serial.begin(9600);
+
+  scale.begin(DOUT, CLK);
+  scale.set_scale(calibration_factor);
+  scale.tare();              // Zero the scale
+
+  Serial.println("Scale ready.");
+}
+
+void loop() {
+  if (!scale.is_ready()) {
+    delay(50);
+    return;
+  }
+
+  // Get stable averaged reading
+  float weight = scale.get_units(10);
+
+  // Output PURE number only
+  Serial.println(weight, 2);
+
+  delay(50);
+}
+
+
+**================================================================================
   TOOLS & VERSIONS
-================================================================================
+================================================================================**
 
   Tool                  Version         Download
   ──────────────────────────────────────────────────────────────────────────────
@@ -13,7 +91,7 @@
   mediamtx (RTSP)       Latest          https://github.com/bluenviron/mediamtx/releases
   FFmpeg                Release-essentials  https://www.gyan.dev/ffmpeg/builds/
 
-  Setup Enviroment, Python libraries are listed in requirements.txt:
+  Python libraries are listed in requirements.txt.
   Install with:  pip install -r requirements.txt
 
 ================================================================================
@@ -39,16 +117,10 @@
   plastic           Plastic Bottle 2.0                   https://universe.roboflow.com/fyp-li8zz/plastic-bottle-2.0
                     by fyp-li8zz
 
-
-  Train well model path: 320p-2/weights/
-  original: best.pt (can convert to .engine, .onnx, .openvino or else)
-  
-  Current use: best_openvino_model folder
-  
-================================================================================
+**================================================================================
   PROJECT STRUCTURE
 ================================================================================
-
+**
   F:\laragon\www\
   ├── Front-end\           User-facing website (PHP)
   ├── Admin\               Admin dashboard (PHP)
@@ -62,9 +134,43 @@
   ├── requirements.txt     Python dependencies
   └── venv\                Python virtual environment
 
-================================================================================
+**================================================================================
+  CLONING FROM GITHUB
+================================================================================**
+
+  Repository: https://github.com/TeeChinYean/Degree_Final_Year_Project.git
+
+  After cloning, the following files are NOT included in the repo and must be
+  obtained separately before the project will work:
+
+  ┌──────────────────────────────────────┬──────────┬────────────────────────────────────────────────────┐
+  │  File / Folder                       │  Size    │  How to Get                                        │
+  ├──────────────────────────────────────┼──────────┼────────────────────────────────────────────────────┤
+  │  station/main_system/ffmpeg.exe      │  ~97 MB  │  https://www.gyan.dev/ffmpeg/builds/               │
+  │  station/main_system/mediamtx.exe   │  ~51 MB  │  https://github.com/bluenviron/mediamtx/releases   │
+  │  station/main_system/main_system.exe│  ~8 MB   │  Build with PyInstaller (see SETUP STEPS > Part C) │
+  │  station/setup.exe                  │  ~11 MB  │  Build with PyInstaller (see SETUP STEPS > Part C) │
+  │  venv/                              │  Large   │  Run: pip install -r requirements.txt               │
+  └──────────────────────────────────────┴──────────┴────────────────────────────────────────────────────┘
+
+  Files that ARE included in the repo (available after clone):
+  ✅ All PHP source files  (Front-end/, Admin/)
+  ✅ Python source files   (main_system.py, admin_video_server.py, setup.py)
+  ✅ AI model files        (best_openvino_model/best.xml, best.bin)
+  ✅ website.sql           (database schema + seed data)
+  ✅ requirements.txt      (Python dependencies list)
+  ✅ README.txt
+
+  Quick start after cloning:
+  1. git clone https://github.com/TeeChinYean/Degree_Final_Year_Project.git
+  2. Copy cloned folder into  F:\laragon\www\
+  3. Download ffmpeg.exe and mediamtx.exe (links above) → place in station\main_system\
+  4. python -m venv venv  →  venv\Scripts\activate  →  pip install -r requirements.txt
+  5. Follow SETUP STEPS A, B, C below.
+
+**================================================================================
   SETUP STEPS
-================================================================================
+================================================================================**
 
   ── A. Web Application (Laragon) ─────────────────────────────────────────────
 
@@ -106,13 +212,13 @@
   3. python main_system.py ← start detection system
 
   Station Requirements:
-  • Windows 10/11 (64-bit), USB webcam
+  • Windows 10/11 (64-bit), USB webcam, Intel CPU
   • Tailscale VPN installed and connected
   • mediamtx.exe + ffmpeg.exe in the same folder as main_system.exe
 
-================================================================================
+**================================================================================
   PORTS USED
-================================================================================
+================================================================================**
 
   Port   Service
   ─────────────────────────────────────────────
@@ -123,9 +229,9 @@
   8554   RTSP (mediamtx) — video stream
   55200  Raw Camera TCP — station → admin
 
-================================================================================
+**================================================================================
   TROUBLESHOOTING
-================================================================================
+================================================================================**
 
   "Admin server unreachable"  → Check Tailscale is running on both PCs.
   "Camera not found"          → Change CAMERA_INDEX in site_config.json.
